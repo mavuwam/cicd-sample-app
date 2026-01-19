@@ -1,0 +1,13 @@
+{
+  "name": "sample-cicd-app",
+  "version": "1.0.0",
+  "description": "Sample application for CI/CD pipeline testing",
+  "main": "index.js",
+  "scripts": {
+    "build": "echo 'Build completed successfully'",
+    "test": "echo 'All tests passed'"
+  },
+  "keywords": ["cicd", "aws", "lambda"],
+  "author": "mavuwam",
+  "license": "MIT"
+}

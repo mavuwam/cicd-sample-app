@@ -1,0 +1,33 @@
+version: 0.2
+
+phases:
+  install:
+    runtime-versions:
+      nodejs: 18
+    commands:
+      - echo "Installing dependencies..."
+      - npm install
+  
+  pre_build:
+    commands:
+      - echo "Running pre-build checks..."
+      - echo "Build started on $(date)"
+      - echo "Commit SHA - $CODEBUILD_RESOLVED_SOURCE_VERSION"
+  
+  build:
+    commands:
+      - echo "Building application..."
+      - npm run build
+      - echo "Running tests..."
+      - npm test
+  
+  post_build:
+    commands:
+      - echo "Build completed on $(date)"
+      - echo "Packaging CloudFormation template..."
+
+artifacts:
+  files:
+    - template.yaml
+    - '**/*'
+  name: BuildArtifact
