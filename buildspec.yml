@@ -24,6 +24,8 @@ phases:
   post_build:
     commands:
       - echo "Build completed on `date`"
+      - echo "Renaming packaged.yaml to template.yaml for pipeline..."
+      - cp packaged.yaml template.yaml
       - echo "Preparing frontend for deployment..."
       # The frontend will be deployed after CloudFormation creates the API
       - |
@@ -59,7 +61,7 @@ phases:
 
 artifacts:
   files:
-    - packaged.yaml
+    - template.yaml
     - deploy-frontend.sh
     - frontend/**/*
   name: BuildArtifact
