@@ -19,7 +19,8 @@ phases:
       - echo "Building SAM application..."
       - sam build --use-container
       - echo "Packaging application..."
-      - sam package --output-template-file packaged.yaml --s3-bucket $ARTIFACT_BUCKET
+      - echo "Artifact bucket: $ARTIFACT_BUCKET"
+      - sam package --output-template-file packaged.yaml --s3-bucket codepipeline-artifacts-382207551874-us-east-1
 
   post_build:
     commands:
