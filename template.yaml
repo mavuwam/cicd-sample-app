@@ -1,85 +1,198 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: 'Sample application deployed by CI/CD pipeline'
+Transform: AWS::Serverless-2016-10-31
+Description: AI-Powered Business Proposal Generator
 
 Parameters:
   Environment:
     Type: String
-    Description: Environment name
     Default: production
     AllowedValues:
       - development
       - staging
       - production
 
+Globals:
+  Function:
+    Timeout: 300
+    Runtime: nodejs20.x
+    MemorySize: 512
+    Environment:
+      Variables:
+        ENVIRONMENT: !Ref Environment
+
 Resources:
-  # Sample Lambda Function
-  HelloWorldFunction:
-    Type: AWS::Lambda::Function
+  # S3 Bucket for generated documents
+  DocumentsBucket:
+    Type: AWS::S3::Bucket
     Properties:
-      FunctionName: !Sub 'hello-world-${Environment}'
-      Runtime: nodejs18.x
-      Handler: index.handler
-      Role: !GetAtt LambdaExecutionRole.Arn
-      Code:
-        ZipFile: |
-          exports.handler = async (event) => {
-              console.log('Hello from Lambda!');
-              return {
-                  statusCode: 200,
-                  body: JSON.stringify({
-                      message: 'Hello World!',
-                      environment: process.env.ENVIRONMENT,
-                      timestamp: new Date().toISOString()
-                  })
-              };
-          };
+      BucketName: !Sub 'proposal-generator-docs-${AWS::AccountId}'
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteOldDocuments
+            Status: Enabled
+            ExpirationInDays: 30
+
+  # S3 Bucket for frontend hosting
+  FrontendBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub 'proposal-generator-frontend-${AWS::AccountId}'
+      WebsiteConfiguration:
+        IndexDocument: index.html
+        ErrorDocument: index.html
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: false
+        BlockPublicPolicy: false
+        IgnorePublicAcls: false
+        RestrictPublicBuckets: false
+
+  # Bucket policy for frontend
+  FrontendBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref FrontendBucket
+      PolicyDocument:
+        Statement:
+          - Sid: PublicReadGetObject
+            Effect: Allow
+            Principal: '*'
+            Action: 's3:GetObject'
+            Resource: !Sub '${FrontendBucket.Arn}/*'
+
+  # Lambda function for proposal generation
+  ProposalGeneratorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub 'proposal-generator-${Environment}'
+      CodeUri: src/
+      Handler: generate-proposal.handler
       Environment:
         Variables:
-          ENVIRONMENT: !Ref Environment
-      Tags:
-        - Key: Environment
-          Value: !Ref Environment
-        - Key: ManagedBy
-          Value: CICD-Pipeline
+          DOCUMENTS_BUCKET: !Ref DocumentsBucket
+      Policies:
+        - S3CrudPolicy:
+            BucketName: !Ref DocumentsBucket
+        - Statement:
+            - Effect: Allow
+              Action:
+                - bedrock:InvokeModel
+              Resource: 
+                - !Sub 'arn:aws:bedrock:${AWS::Region}::foundation-model/anthropic.claude-3-sonnet-20240229-v1:0'
+                - !Sub 'arn:aws:bedrock:${AWS::Region}::foundation-model/anthropic.claude-3-haiku-20240307-v1:0'
+      Events:
+        GenerateProposal:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ProposalApi
+            Path: /generate
+            Method: POST
+        OptionsRequest:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ProposalApi
+            Path: /generate
+            Method: OPTIONS
 
-  # Lambda Execution Role
-  LambdaExecutionRole:
-    Type: AWS::IAM::Role
+  # API Gateway
+  ProposalApi:
+    Type: AWS::Serverless::Api
     Properties:
-      RoleName: !Sub 'hello-world-lambda-role-${Environment}'
-      AssumeRolePolicyDocument:
-        Version: '2012-10-17'
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service: lambda.amazonaws.com
-            Action: 'sts:AssumeRole'
-      ManagedPolicyArns:
-        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
-      Tags:
-        - Key: Environment
-          Value: !Ref Environment
+      Name: !Sub 'proposal-generator-api-${Environment}'
+      StageName: !Ref Environment
+      Cors:
+        AllowMethods: "'POST, OPTIONS'"
+        AllowHeaders: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+        AllowOrigin: "'*'"
+      DefinitionBody:
+        openapi: 3.0.1
+        info:
+          title: Proposal Generator API
+          version: '1.0'
+        paths:
+          /generate:
+            post:
+              x-amazon-apigateway-integration:
+                uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ProposalGeneratorFunction.Arn}/invocations'
+                httpMethod: POST
+                type: aws_proxy
+              responses:
+                '200':
+                  description: Success
+            options:
+              x-amazon-apigateway-integration:
+                type: mock
+                requestTemplates:
+                  application/json: '{"statusCode": 200}'
+                responses:
+                  default:
+                    statusCode: 200
+                    responseParameters:
+                      method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+                      method.response.header.Access-Control-Allow-Methods: "'POST,OPTIONS'"
+                      method.response.header.Access-Control-Allow-Origin: "'*'"
+              responses:
+                '200':
+                  description: CORS response
+                  headers:
+                    Access-Control-Allow-Headers:
+                      schema:
+                        type: string
+                    Access-Control-Allow-Methods:
+                      schema:
+                        type: string
+                    Access-Control-Allow-Origin:
+                      schema:
+                        type: string
 
   # CloudWatch Log Group
-  FunctionLogGroup:
+  ProposalGeneratorLogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
-      LogGroupName: !Sub '/aws/lambda/hello-world-${Environment}'
+      LogGroupName: !Sub '/aws/lambda/proposal-generator-${Environment}'
       RetentionInDays: 7
 
 Outputs:
+  ApiEndpoint:
+    Description: API Gateway endpoint URL
+    Value: !Sub 'https://${ProposalApi}.execute-api.${AWS::Region}.amazonaws.com/${Environment}/generate'
+    Export:
+      Name: !Sub '${AWS::StackName}-ApiEndpoint'
+
+  FrontendUrl:
+    Description: Frontend website URL
+    Value: !GetAtt FrontendBucket.WebsiteURL
+    Export:
+      Name: !Sub '${AWS::StackName}-FrontendUrl'
+
   FunctionName:
-    Description: Name of the Lambda function
-    Value: !Ref HelloWorldFunction
+    Description: Lambda function name
+    Value: !Ref ProposalGeneratorFunction
     Export:
       Name: !Sub '${AWS::StackName}-FunctionName'
-  
+
   FunctionArn:
-    Description: ARN of the Lambda function
-    Value: !GetAtt HelloWorldFunction.Arn
+    Description: Lambda function ARN
+    Value: !GetAtt ProposalGeneratorFunction.Arn
     Export:
       Name: !Sub '${AWS::StackName}-FunctionArn'
-  
-  Environment:
-    Description: Environment name
-    Value: !Ref Environment
+
+  DocumentsBucket:
+    Description: S3 bucket for generated documents
+    Value: !Ref DocumentsBucket
+    Export:
+      Name: !Sub '${AWS::StackName}-DocumentsBucket'
+
+  FrontendBucket:
+    Description: S3 bucket for frontend
+    Value: !Ref FrontendBucket
+    Export:
+      Name: !Sub '${AWS::StackName}-FrontendBucket'

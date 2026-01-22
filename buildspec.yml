@@ -3,31 +3,67 @@ version: 0.2
 phases:
   install:
     runtime-versions:
-      nodejs: 18
+      nodejs: 20
     commands:
       - echo "Installing dependencies..."
-      - npm install
-  
+      - npm install -g aws-sam-cli
+      - cd src && npm install && cd ..
+
   pre_build:
     commands:
-      - echo "Running pre-build checks..."
-      - echo "Build started on $(date)"
-      - echo "Commit SHA - $CODEBUILD_RESOLVED_SOURCE_VERSION"
-  
+      - echo "Running pre-build tasks..."
+      - echo "Build started on `date`"
+
   build:
     commands:
-      - echo "Building application..."
-      - npm run build
-      - echo "Running tests..."
-      - npm test
-  
+      - echo "Building SAM application..."
+      - sam build --use-container
+      - echo "Packaging application..."
+      - sam package --output-template-file packaged.yaml --s3-bucket $ARTIFACT_BUCKET
+
   post_build:
     commands:
-      - echo "Build completed on $(date)"
-      - echo "Packaging CloudFormation template..."
+      - echo "Build completed on `date`"
+      - echo "Preparing frontend for deployment..."
+      # The frontend will be deployed after CloudFormation creates the API
+      - |
+        cat > deploy-frontend.sh << 'EOF'
+        #!/bin/bash
+        set -e
+        
+        # Get stack outputs
+        API_ENDPOINT=$(aws cloudformation describe-stacks \
+          --stack-name application-stack \
+          --query 'Stacks[0].Outputs[?OutputKey==`ApiEndpoint`].OutputValue' \
+          --output text)
+        
+        FRONTEND_BUCKET=$(aws cloudformation describe-stacks \
+          --stack-name application-stack \
+          --query 'Stacks[0].Outputs[?OutputKey==`FrontendBucket`].OutputValue' \
+          --output text)
+        
+        echo "API Endpoint: $API_ENDPOINT"
+        echo "Frontend Bucket: $FRONTEND_BUCKET"
+        
+        # Update frontend with API endpoint
+        sed "s|API_ENDPOINT_PLACEHOLDER|$API_ENDPOINT|g" frontend/index.html > frontend/index-updated.html
+        
+        # Upload to S3
+        aws s3 cp frontend/index-updated.html s3://$FRONTEND_BUCKET/index.html \
+          --content-type "text/html" \
+          --cache-control "no-cache"
+        
+        echo "Frontend deployed successfully!"
+        EOF
+      - chmod +x deploy-frontend.sh
 
 artifacts:
   files:
-    - template.yaml
-    - '**/*'
+    - packaged.yaml
+    - deploy-frontend.sh
+    - frontend/**/*
   name: BuildArtifact
+
+cache:
+  paths:
+    - 'src/node_modules/**/*'

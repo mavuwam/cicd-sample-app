@@ -1,13 +1,14 @@
 {
-  "name": "sample-cicd-app",
+  "name": "proposal-generator-app",
   "version": "1.0.0",
-  "description": "Sample application for CI/CD pipeline testing",
-  "main": "index.js",
+  "description": "AI-powered business proposal and tender document generator",
+  "main": "src/generate-proposal.js",
   "scripts": {
     "build": "echo 'Build completed successfully'",
-    "test": "echo 'All tests passed'"
+    "test": "echo 'All tests passed'",
+    "deploy-frontend": "./deploy-frontend.sh"
   },
-  "keywords": ["cicd", "aws", "lambda"],
+  "keywords": ["ai", "proposals", "tenders", "aws", "bedrock", "cicd"],
   "author": "mavuwam",
   "license": "MIT"
 }
