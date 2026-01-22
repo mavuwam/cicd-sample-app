@@ -25,8 +25,14 @@ phases:
   post_build:
     commands:
       - echo "Build completed on `date`"
+      - echo "Checking if packaged.yaml was created..."
+      - ls -la packaged.yaml || echo "ERROR: packaged.yaml not found!"
+      - echo "Contents of packaged.yaml (first 50 lines):"
+      - head -50 packaged.yaml || echo "ERROR: Cannot read packaged.yaml"
       - echo "Renaming packaged.yaml to template.yaml for pipeline..."
       - cp packaged.yaml template.yaml
+      - echo "Verifying template.yaml..."
+      - ls -la template.yaml
       - echo "Preparing frontend for deployment..."
       # The frontend will be deployed after CloudFormation creates the API
       - |
